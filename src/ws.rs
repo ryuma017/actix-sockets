@@ -1,13 +1,12 @@
-use actix::{fut, ActorContext};
-use crate::messages::{Disconnect, Connect, WsMessage, ClientActorMessage}; //We'll be writing this later
 use crate::lobby::Lobby;
-use actix::{Actor, Addr, Running, StreamHandler, WrapFuture, ActorFuture, ContextFutureSpawner};
+use crate::messages::{ClientActorMessage, Connect, Disconnect, WsMessage};
+use actix::{fut, ActorContext, ActorFuture, ContextFutureSpawner, WrapFuture};
+use actix::{Actor, Addr, Running, StreamHandler};
 use actix::{AsyncContext, Handler};
 use actix_web_actors::ws;
 use actix_web_actors::ws::Message::Text;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
-
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -22,7 +21,7 @@ pub struct WsConn {
 impl WsConn {
     pub fn new(room: Uuid, lobby: Addr<Lobby>) -> WsConn {
         WsConn {
-            id: Uuid::new_v4,
+            id: Uuid::new_v4(),
             room,
             hb: Instant::now(),
             lobby_addr: lobby,
@@ -33,7 +32,7 @@ impl WsConn {
 impl Actor for WsConn {
     type Context = ws::WebsocketContext<Self>;
 
-    fn started(&mut self, ctx: &mut Self:: Context) {
+    fn started(&mut self, ctx: &mut Self::Context) {
         self.hb(ctx);
 
         let addr = ctx.address();
@@ -55,21 +54,28 @@ impl Actor for WsConn {
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        self.lobby_addr.do_send(Desconnect { id: self.id, room_id: self.room })
+        self.lobby_addr.do_send(Disconnect {
+            id: self.id,
+            room_id: self.room,
+        });
+        Running::Stop
     }
 }
 
 impl WsConn {
     fn hb(&self, ctx: &mut ws::WebsocketContext<Self>) {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
-            if Instant::now().dutation_since(act.hb) > CLIENT_TIMEOUT {
+            if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
                 println!("Disconnecting failed heartbeat");
-                act.lobby_addr.do_send(Disconnect { id: act.id, room_id: act.room_id });
+                act.lobby_addr.do_send(Disconnect {
+                    id: act.id,
+                    room_id: act.room,
+                });
                 ctx.stop();
                 return;
             }
 
-            ctx.ping(b"PING");
+            ctx.ping(b"hi");
         });
     }
 }
@@ -96,9 +102,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsConn {
             Ok(Text(s)) => self.lobby_addr.do_send(ClientActorMessage {
                 id: self.id,
                 msg: s,
-                room_id: self.room
+                room_id: self.room,
             }),
-            Err(e) => panic!(e),
+
+            Err(e) => panic!("{}", e),
         }
     }
 }
